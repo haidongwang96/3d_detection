@@ -1,0 +1,14 @@
+/data
+/test_script
+*.log
+*.tmp
+*.temp
+.DS_Store
+*.jpg
+*.png
+*.mp4
+*.pt
+*.pth
+*.npy
+*.idea
+*.xml
