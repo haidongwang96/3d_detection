@@ -1,0 +1,5 @@
+inference:
+  conf: 0.5
+  iou: 0.7
+  half:  False
+  steam_buffer: True
