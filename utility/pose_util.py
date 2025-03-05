@@ -1,6 +1,7 @@
 import os
 
 import cv2
+import open3d as o3d
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -142,10 +143,10 @@ colors = Colors()
 
 class skeleton_util():
     def __init__(self):
-        self.skeleton = [[16, 14],[14, 12],[17, 15],[15, 13],
+        self.skeleton = np.array([[16, 14],[14, 12],[17, 15],[15, 13],
                          [12, 13],[6, 12],[7, 13],[6, 7],[6, 8],
                          [7, 9],[8, 10],[9, 11],[2, 3],[1, 2],
-                             [1, 3],[2, 4],[3, 5],[4, 6],[5, 7]]
+                             [1, 3],[2, 4],[3, 5],[4, 6],[5, 7]])
 
         self.limb_color = colors.pose_palette[[9, 9, 9, 9, 7, 7, 7, 0, 0, 0, 0, 0, 16, 16, 16, 16, 16, 16, 16]]
         self.kpt_color = colors.pose_palette[[16, 16, 16, 16, 16, 0, 0, 0, 0, 0, 0, 9, 9, 9, 9, 9, 9]]
@@ -235,6 +236,144 @@ def plot_3d_fence(ax, landmarks_3d, color):
                 color=color, linestyle='-')
 
     return ax
+
+def roi2d(box1, box2):
+    # xmin,ymin,xmax,ymax = box1
+    # xmin_f,ymin_f,xmax_f,ymax_f = fence(box2)
+
+    # 计算交集区域
+    xmin_inter = max(box1[0], box2[0])
+    ymin_inter = max(box1[1], box2[1])
+    xmax_inter = min(box1[2], box2[2])
+    ymax_inter = min(box1[3], box2[3])
+
+    # 计算交集面积
+    inter_width = max(0, xmax_inter - xmin_inter)
+    inter_height = max(0, ymax_inter - ymin_inter)
+    inter_area = inter_width * inter_height
+
+    # 计算两个边界框的面积
+    box1_area = (box1[2] - box1[0]) * (box1[3] - box1[1])
+    box2_area = (box2[2] - box2[0]) * (box2[3] - box2[1])
+
+    # 计算并集面积
+    union_area = box1_area + box2_area - inter_area
+
+    # 计算 IoU
+    iou = inter_area / union_area if union_area != 0 else 0
+    return iou
+
+
+def filter_valid_kypt_for_o3d_input(p3d):
+    # p3ds : (17,3)
+    p3d_indices = np.where((p3d[:, 0] != 0) & (p3d[:, 1] != 0) & (p3d[:, 2] != 0))[0]
+    p3d_colors = sk_util.kpt_color[p3d_indices] / 255
+    p3d_conn = []
+    p3d_conn_color = []
+    for i, sk in enumerate(sk_util.skeleton):
+        pos1 = int(sk[0]-1) # sk_util.skeleton 中index需要-1
+        pos2 = int(sk[1]-1)
+        if pos1 in p3d_indices and pos2 in p3d_indices:
+            p3d_conn.append([sk[0]-1, sk[1]-1])
+            p3d_conn_color.append(sk_util.limb_color[i]/255)
+
+    return p3d_indices, p3d_colors, p3d_conn, p3d_conn_color
+
+
+class PointcloudVisualizer():
+
+    def __init__(self, camera_params):
+        self.vis = o3d.visualization.VisualizerWithKeyCallback()
+        self.vis.create_window()
+        self.camera_params = camera_params
+        #mesh = o3d.geometry.TriangleMesh.create_coordinate_frame()
+        #self.vis.add_geometry(mesh)
+
+        self.ctr = self.vis.get_view_control()
+
+    # self.vis.register_key_callback(key, your_update_function)
+
+    def add_geometry(self, cloud):
+        self.vis.add_geometry(cloud)
+
+    def remove_geometry(self, cloud):
+        self.vis.remove_geometry(cloud)
+
+    def update(self, cloud):
+        # todo: 优化
+        # 应用相机参数到视图
+        self.ctr.convert_from_pinhole_camera_parameters(self.camera_params, allow_arbitrary=True)
+        self.vis.update_geometry(cloud)
+        self.vis.update_renderer()
+        self.vis.poll_events()
+
+    def destroy(self):
+        self.vis.destroy_window()
+
+
+class SingleKypto3d:
+
+    def __init__(self, vis):
+        self.pcd = o3d.geometry.PointCloud()
+        self.pcd.points = o3d.utility.Vector3dVector(list([[0.0, 0.0, 0.0]]))
+
+        self.lineset = o3d.geometry.LineSet()
+        self.lineset.points = o3d.utility.Vector3dVector(list([[0.0, 0.0, 0.0]]))
+        self.lineset.lines = o3d.utility.Vector2iVector([[0, 1]])
+
+        self.bbox = self.pcd.get_axis_aligned_bounding_box()
+        self.bbox.color = (0, 0, 1)
+
+        vis.add_geometry(self.pcd)
+        vis.add_geometry(self.lineset)
+        vis.add_geometry(self.bbox)
+
+
+    def update_empty_points(self):
+        self.pcd.points = o3d.utility.Vector3dVector(list([[0.0, 0.0, 0.0]]))
+        self.lineset.points = o3d.utility.Vector3dVector(list([[0.0, 0.0, 0.0]]))
+        self.lineset.lines = o3d.utility.Vector2iVector([[0, 1]])
+        tempbox = self.pcd.get_axis_aligned_bounding_box()
+        self.bbox.max_bound = tempbox.max_bound
+        self.bbox.min_bound = tempbox.min_bound
+
+
+    def update(self, vis):
+        vis.update(self.pcd)
+        vis.update(self.lineset)
+        vis.update(self.bbox)
+
+    def update_data(self, p3d):
+
+        valid_index, p3d_colors, p3d_conn, p3d_conn_color = su.filter_valid_kypt_for_o3d_input(p3d)
+
+        self.pcd.points = o3d.utility.Vector3dVector(p3d[valid_index])
+        self.pcd.colors = o3d.utility.Vector3dVector(sk_util.kpt_color[valid_index]/255)
+
+        self.lineset.points = o3d.utility.Vector3dVector(p3d)
+        self.lineset.lines = o3d.utility.Vector2iVector(p3d_conn)
+        self.lineset.colors = o3d.utility.Vector3dVector(p3d_conn_color)
+
+        tempbox = self.pcd.get_axis_aligned_bounding_box()
+        self.bbox.max_bound = tempbox.max_bound
+        self.bbox.min_bound = tempbox.min_bound
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 class PoseAnimater:

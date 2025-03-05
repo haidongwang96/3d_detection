@@ -134,11 +134,11 @@ class MultiCameraCapture:
         for capture in self.captures:
             capture.release()
 
-    def __del__(self):
-        """
-        析构函数，确保摄像头资源被释放
-        """
-        self.release()
+    # def __del__(self):
+    #     """
+    #     析构函数，确保摄像头资源被释放
+    #     """
+    #     self.release()
 
 
 class MultiCameraCapture_abondon:
