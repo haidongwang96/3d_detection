@@ -21,7 +21,7 @@ import utility as su
 os.makedirs("../plt", exist_ok=True)
 
 
-DETECTOR = ultralytics.YOLO("../data/weights/yolo11l-pose.pt")
+DETECTOR = ultralytics.YOLO("../data/weights/yolo11n-pose.pt")
 # EXTRACTOR = torchreid.utils.FeatureExtractor(
 #     model_name='mobilenetv2_x1_0',
 #     model_path="../data/weights/mobilenetv2_1dot0_market .pth.tar",
@@ -97,7 +97,6 @@ def main():
     camera_params.extrinsic = extr_mat
 
 
-    step_in = False
     landmark3ds = np.array([[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0]], dtype=np.float32)
     landmark2d_xy = np.array([0,0,1,1]) # xymin, xymax
     boundary = [(-1, 2),(-1, 2),(0, 2)]
@@ -181,13 +180,11 @@ def main():
                     landmark_lineset.colors = o3d.utility.Vector3dVector([green for _ in landmark_conn])
                     step_in = False
 
-
             else:
                 single_o3d_obj.update_empty_points()
                 landmark_lineset.colors = o3d.utility.Vector3dVector([green for _ in landmark_conn])
                 step_in = False
 
-                #valid_index, p3d_colors, p3d_conn, p3d_conn_color = su.filter_valid_kypt_for_o3d_input(p3ds_coco17)
 
 
             # if len(np.array(feature_dbs[0].values())) != 0 and len(np.array(feature_dbs[1].values())) != 0:

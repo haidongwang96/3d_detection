@@ -5,7 +5,6 @@
 *.temp
 .DS_Store
 *.jpg
-*.png
 *.mp4
 *.pt
 *.pth

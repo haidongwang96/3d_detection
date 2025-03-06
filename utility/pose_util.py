@@ -360,22 +360,6 @@ class SingleKypto3d:
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 class PoseAnimater:
 
     def __init__(self, xlim, ylim, zlim):
