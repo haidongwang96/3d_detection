@@ -1,4 +1,4 @@
-import os.path
+import os
 import camera
 
 """
@@ -56,8 +56,8 @@ if __name__ == '__main__':
 
     # arUco码
     # 双相机外参同时标定
-    aruco_folder = os.path.join(record_root_folder, "aruco_0")
-    multi_camera_calibrate_extrinsics(aruco_folder, intrinsic_folder,cam_ids=cam_ids)
+    # aruco_folder = os.path.join(record_root_folder, "aruco_0")
+    # multi_camera_calibrate_extrinsics(aruco_folder, intrinsic_folder,cam_ids=cam_ids)
 
     # fence标定
     landmark_folder = os.path.join(record_root_folder, "landmark_0")

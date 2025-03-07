@@ -10,6 +10,8 @@ import utility as su
 
 class VirtualFences:
 
+    # 拍摄时处于同一时刻，放置在同一文件夹
+
     def __init__(self, config):
         self.config = config
         self.landmark_folder = f"../data/record/{self.config['proj_root']}/landmark_0"
@@ -85,12 +87,16 @@ class MultiCameraCapture:
         self.start_time = time.time()
 
 
-    def video_feeds(self, video_feed_ts):
+    def video_feeds(self, video_feed_ts, video_folder=None):
         # 根据录制的timestamp
         feeds = []
         for id in self.cam_ids:
-            video_i = f"../data/record/{self.proj_root}/{video_feed_ts}_{id}.mp4"
+            if video_folder is  not None:
+                video_i = f"../data/record/{self.proj_root}/{video_folder}/{video_feed_ts}_{id}.mp4"
+            else:
+                video_i = f"../data/record/{self.proj_root}/{video_feed_ts}_{id}.mp4"
             feeds.append(self.get_cv2_capture(video_i))
+            print(video_i)
         self.captures = feeds
         # 检查摄像头是否成功打开
         for i, capture in enumerate(self.captures):

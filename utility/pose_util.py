@@ -315,11 +315,11 @@ class SingleKypto3d:
 
     def __init__(self, vis):
         self.pcd = o3d.geometry.PointCloud()
-        self.pcd.points = o3d.utility.Vector3dVector(list([[0.0, 0.0, 0.0]]))
+        #self.pcd.points = o3d.utility.Vector3dVector(list([[0.0, 0.0, 0.0]]))
 
         self.lineset = o3d.geometry.LineSet()
-        self.lineset.points = o3d.utility.Vector3dVector(list([[0.0, 0.0, 0.0]]))
-        self.lineset.lines = o3d.utility.Vector2iVector([[0, 1]])
+        #self.lineset.points = o3d.utility.Vector3dVector(list([[0.0, 0.0, 0.0]]))
+        #self.lineset.lines = o3d.utility.Vector2iVector([[0, 1]])
 
         self.bbox = self.pcd.get_axis_aligned_bounding_box()
         self.bbox.color = (0, 0, 1)
@@ -356,7 +356,7 @@ class SingleKypto3d:
 
         tempbox = self.pcd.get_axis_aligned_bounding_box()
         self.bbox.max_bound = tempbox.max_bound
-        self.bbox.min_bound = tempbox.min_bound
+        self.bbox.min_bound = [tempbox.min_bound[0], tempbox.min_bound[1], 0] # box Z轴=0
 
 
 

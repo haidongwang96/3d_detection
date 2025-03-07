@@ -52,6 +52,26 @@ font_scale = 1.5
 object_points = np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0], [1,1,0]], dtype=np.float32)
 z_axis = np.array((0,0,1), dtype=np.float32)
 
+
+def solve_XY(u, v, k, R, t):
+    # 构造齐次坐标
+    uv_homogeneous = np.array([u, v, 1])
+
+    # 计算投影矩阵 P = k[R|t]
+    P = np.dot(k, np.hstack((R[:, :2], t.reshape(3, 1))))
+
+    # 计算逆矩阵
+    P_inv = np.linalg.pinv(P)
+
+    # 求解 [X, Y, 1]
+    XY_homogeneous = np.dot(P_inv, uv_homogeneous)
+
+    # 归一化
+    X = XY_homogeneous[0] / XY_homogeneous[2]
+    Y = XY_homogeneous[1] / XY_homogeneous[2]
+
+    return X, Y
+
 extrs= []
 for i,(img, mark) in enumerate(zip(imgs, marks)) :
 
@@ -82,7 +102,21 @@ for i,(img, mark) in enumerate(zip(imgs, marks)) :
     cv2.line(img, p_o, (int(p_z[0]), int(p_z[1])), yellow, 1)
     cv2.putText(img, "z-axis", p_z, cv2.FONT_HERSHEY_PLAIN, font_scale, black,2)
 
+    p_test = np.array([0.5, 0.5, 0])
+    p2_test, _ = cv2.projectPoints(p_test, rvec, tvec, ks[i], None)
+    p2_test = p2_test[0][0].astype(int)
+    print(p2_test)
 
+    cv2.circle(img, (int(p2_test[0]), int(p2_test[1])), 2, green, 2)
+    #cv2.line(img, p_o, (int(p_z[0]), int(p_z[1])), yellow, 1)
+    #cv2.putText(img, "z-axis", p_z, cv2.FONT_HERSHEY_PLAIN, font_scale, black,2)
+
+    extr = camera.Extrinsic(rvec, tvec)
+    R = extr.R()
+    t = extr.t()
+
+    x,y = solve_XY(p2_test[0],p2_test[1], ks[i], R, t)
+    print(x,y,0)
 
 
 stack = np.hstack((img0, img1))

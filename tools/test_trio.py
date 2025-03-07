@@ -8,9 +8,7 @@ import ultralytics
 import torchreid
 from deep_sort_realtime.deepsort_tracker import DeepSort
 from deep_sort_realtime.deep_sort import nn_matching
-
-import matplotlib.pyplot as plt
-
+from genesis.ext.trimesh.creation import camera_marker
 
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
@@ -32,13 +30,6 @@ DETECTOR = ultralytics.YOLO("../data/weights/yolo11n-pose.pt")
 #     model_path="../data/weights/osnet_x1_0_imagenet.pth",
 #     device='cuda'
 # )
-
-
-class TrackHPObj:
-
-    def __init__(self, track, obj:su.HumanPoseObject):
-        self.track = track
-        self.obj = obj
 
 
 def process_predict(frame, predict, tracker):
@@ -69,19 +60,33 @@ def process_predict(frame, predict, tracker):
         matches = ml.match_regions(regions_t, regions_obj, thresh=0.5) # todo: thresh 到底取多少？
         for match in matches:
             t_id, obj_id = match
-            trackobj = TrackHPObj(tracks[t_id], objs[obj_id]) # merge track info and obj info
+            trackobj = su.TrackHPObj(tracks[t_id], objs[obj_id]) # merge track info and obj info
             track_objs.append(trackobj)
 
     return tracks, track_objs
 
 def main():
 
-    config = su.read_yaml_file('../data/record/office_3rd_floor_whd/config.yaml')
+    config = su.read_yaml_file('../data/record/tri_test/config.yaml')
     CAM_IDS = config["cam_ids"]
-    landmarks = camera.VirtualFences(config).landmarks
+    #landmarks = camera.VirtualFences(config).landmarks
+    landmark_3 = [[591, 501],[457, 558],[603, 644],[729, 564]]
+    landmark_5 = [[400, 433],[427, 546],[606, 544],[556, 445]]
+    landmarks = [landmark_3, landmark_5]
 
     multi_cam = camera.MultiCameraCapture(config)
-    multi_cam.video_feeds("1732606939887")
+    cams = multi_cam.Cameras
+    Ks = [cam.intr.get_cam_mtx() for cam in cams]
+    Rs = [cam.extr.R() for cam in cams]
+    ts = [cam.extr.t() for cam in cams]
+
+    # single person
+    #multi_cam.video_feeds("1741249303346", video_folder="video_0")
+    multi_cam.video_feeds("1741249326571", video_folder="video_1")
+    #multi_cam.video_feeds("1741249348001", video_folder="video_2")
+
+    # multi person
+    #multi_cam.video_feeds("1741249374930", video_folder="video_3")
 
     # 相机triangulation需要projection matrix
     P0 = multi_cam.Cameras[0].projection_matrix
@@ -115,6 +120,11 @@ def main():
     landmark_lineset.colors = o3d.utility.Vector3dVector([green for _ in landmark_conn])
     vis.add_geometry(landmark_lineset)
 
+    # ground_track_o3d = o3d.geometry.PointCloud()
+    # ground_track_o3d.points = o3d.utility.Vector3dVector(list([]))
+    # ground_track_o3d.paint_uniform_color([1.0, 0.0, 0.0])  # 设置为红色
+    # vis.add_geometry(ground_track_o3d)
+
 
     TrackERS_2D = [DeepSort(n_init=3,
                             max_age=15,
@@ -134,6 +144,7 @@ def main():
             predicts = DETECTOR(frames, half=False, conf=0.5, iou=0.7, verbose=False)
             drawed_frames = []
             trackobjs_container = []
+            ground_tracks = []
             #feature_dbs = [{} for _ in CAM_IDS]
 
             for i, predict in enumerate(predicts):
@@ -145,6 +156,7 @@ def main():
                 if len(trackobjs) !=0:
                     trackobjs_container.append(trackobjs)
 
+                # 基于tracking
                 for track in tracks:
                     if not track.is_confirmed():
                         continue
@@ -152,13 +164,27 @@ def main():
                     # todo: 画追踪轨迹
                     frames[i] = su.draw_track_bbox(frames[i], track.to_tlbr(), track.track_id, (255, 0, 0), thickness=2)
 
+                # 基于tracking+obj
                 for track_obj in trackobjs:
-                        frames[i] = ml.obj_plot(frames[i], track_obj.obj, draw_bbox=True, draw_refined_bbox=False, draw_pose=True)
+                    frames[i] = ml.obj_plot(frames[i], track_obj.obj, draw_bbox=True, draw_refined_bbox=False, draw_pose=True)
+
+                    # 画出底边中点
+                    track_box_bottom_center = track_obj.get_track_box_bottom_center
+                    det_box_bottom_center = track_obj.get_obj_box_bottom_center
+                    cv2.circle(frames[i], track_box_bottom_center, 2, (0, 165, 255), thickness=2) # 橙色
+                    cv2.circle(frames[i], det_box_bottom_center, 2, (128, 0, 128), thickness=2) # 紫色
+
+                    p3d_z0 = track_obj.obj_floor_coordinate(Ks[i], Rs[i], ts[i])
+                    ground_tracks.append(p3d_z0)
+
                 drawed_frames.append(frames[i])
 
-            #todo: 双相机 person reid
+
+            # todo: 双相机 person reid
             # 假设配对成功，trackobjs_container的index为配对结果
             if len(trackobjs_container) >= 2:
+                print(1)
+
                 hpo3d = su.HumanPoseObject_3d([trackobj[0].obj for trackobj in trackobjs_container])
                 hpo3d.valid_matched_kypts()
                 kypt_pair = hpo3d.matched_kypts
@@ -167,9 +193,13 @@ def main():
                 p3ds_coco17 = su.p3d_2_kypt_17format(hpo3d.common_indices, p3ds)
                 single_o3d_obj.update_data(p3ds_coco17)
 
+                # print(ground_tracks)
+                # ground_track_o3d.points = o3d.utility.Vector3dVector(np.array(ground_tracks))
+                # vis.update(ground_track_o3d)
+
+                # 计算iou  ->  fence color
                 max_bound = np.asarray(single_o3d_obj.bbox.max_bound) # (x_max, y_max, z_max)
                 min_bound = np.asarray(single_o3d_obj.bbox.min_bound) # (x_min, y_min, z_min)
-
                 x_max, y_max = max_bound[:2]
                 x_min, y_min = min_bound[:2]
                 box_2d = [x_min, y_min, x_max, y_max]
@@ -182,10 +212,11 @@ def main():
                     step_in = False
 
             else:
+                print(2)
                 single_o3d_obj.update_empty_points()
+                #vis.update(ground_track_o3d)
                 landmark_lineset.colors = o3d.utility.Vector3dVector([green for _ in landmark_conn])
                 step_in = False
-
 
 
             # if len(np.array(feature_dbs[0].values())) != 0 and len(np.array(feature_dbs[1].values())) != 0:
@@ -207,7 +238,7 @@ def main():
             cv2.putText(stack, f"FPS: {fps:.2f}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
             cv2.imshow(f"Camera", stack)
             # 按下 'q' 键退出
-            if cv2.waitKey(1) & 0xFF == ord('q'):
+            if cv2.waitKey(0) & 0xFF == ord('q'):
                 break
     finally:
         vis.destroy()

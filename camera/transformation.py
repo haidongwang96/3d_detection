@@ -130,6 +130,47 @@ def project_2d_withdepth_to_3d(points2d, depth, intr: Intrinsics):
     Y = depth * (pixel_y - intr.cy) / intr.fy
     return np.array([X, Y, depth])
 
+
+
+def project_bbox_bottom_center_to_z0_plane(p2d, k, R, t):
+
+    """
+    # deepseek
+    要从已知的2D图像坐标 \([u, v]\) 反推3D空间中的 \([X, Y]\)，可以使用相机投影模型的逆变换。已知相机内参矩阵 \(k\)、旋转矩阵 \(R\)、平移向量 \(t\)，我们可以通过以下步骤求解 \([X, Y]\)。
+    ### 1. 公式推导
+    相机投影模型为：
+    \[
+    k[R|t] \begin{bmatrix} X \\ Y \\ 0 \\ 1 \end{bmatrix} = \begin{bmatrix} u \\ v \\ 1 \end{bmatrix}
+    \]
+    由于 \(Z = 0\)，可以简化为：
+    \[
+    k[R_{2x2}|t_{2x1}] \begin{bmatrix} X \\ Y \\ 1 \end{bmatrix} = \begin{bmatrix} u \\ v \\ 1 \end{bmatrix}
+    \]
+    其中 \(R_{2x2}\) 是旋转矩阵的前两列，\(t_{2x1}\) 是平移向量的前两个元素。
+    """
+
+    u, v = p2d
+    # 构造齐次坐标
+    uv_homogeneous = np.array([u, v, 1])
+
+    # 计算投影矩阵 P = k[R|t]
+    P = np.dot(k, np.hstack((R[:, :2], t.reshape(3, 1))))
+
+    # 计算逆矩阵
+    P_inv = np.linalg.pinv(P)
+
+    # 求解 [X, Y, 1]
+    XY_homogeneous = np.dot(P_inv, uv_homogeneous)
+
+    # 归一化
+    X = XY_homogeneous[0] / XY_homogeneous[2]
+    Y = XY_homogeneous[1] / XY_homogeneous[2]
+
+    return X, Y, 0
+
+
+
+
 def project_3d_to_2d(points_3d, extr:Extrinsic, intr:Intrinsics):
     """
     todo: 此函数包含两个部分，拆分！
@@ -255,6 +296,10 @@ def rotate_to_z0_rotation_matrix(points):
     # 构造旋转矩阵
     rotation_matrix = np.vstack([u, v, normal_normalized])
     return rotation_matrix, centroid
+
+
+
+
 
 
 

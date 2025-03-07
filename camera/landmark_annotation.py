@@ -27,7 +27,7 @@ def on_EVENT_LBUTTONDOWN(event, x, y, args, param):
         cv2.imshow("image", img)
         click_index[0] += 1
 
-def single_landmark_annotation(image_folder_path, cam_id):
+def single_landmark_annotation(proj_folder, image_folder_path, cam_id):
 
     images_names = su.collect_images_by_index(image_folder_path, cam_id)
     assert len(images_names) == 1, ("外参为唯一图像")
@@ -53,7 +53,7 @@ def single_landmark_annotation(image_folder_path, cam_id):
     su.write_list_file(click_coord, landmark_image_path.replace(".jpg", ".txt"))
 
 
-    intr_path = os.path.join("/".join(landmark_image_path.split("/")[:-1]),"calib_info",f"camera_intrinsic_cam_{cam_id}.json")
+    intr_path = os.path.join(proj_folder,"calib_info",f"camera_intrinsic_cam_{cam_id}.json")
     intr = camera.intr_load(intr_path)
     K = intr.get_cam_mtx()
     d = intr.dist

@@ -3,6 +3,36 @@ import camera
 import numpy as np
 
 
+class TrackHPObj:
+
+    def __init__(self, track, obj):
+        self.track = track
+        self.obj = obj
+        self.track_world_coord = None
+        self.det_world_coord = None
+
+    @property
+    def get_track_box_bottom_center(self):
+        x_min, y_min, x_max, y_max = self.track.to_tlbr()
+        # 下底的两个端点是 (x_min, y_max) 和 (x_max, y_max)
+        mid_x = (x_min + x_max) / 2
+        return [int(mid_x), int(y_max)]
+
+    @property
+    def get_obj_box_bottom_center(self):
+        x_min, y_min, x_max, y_max = self.obj.box
+        # 下底的两个端点是 (x_min, y_max) 和 (x_max, y_max)
+        mid_x = (x_min + x_max) / 2
+        return [int(mid_x), int(y_max)]
+
+    def obj_floor_coordinate(self, k, R, t):
+        p2d = self.get_obj_box_bottom_center
+        p3d_z0 = camera.project_bbox_bottom_center_to_z0_plane(p2d, k, R, t)
+        self.det_world_coord = p3d_z0
+        return self.det_world_coord
+
+
+
 class HumanPoseObject:
 
     """
