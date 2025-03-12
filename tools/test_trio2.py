@@ -7,9 +7,8 @@ import time
 import open3d as o3d
 import numpy as np
 import ultralytics
-import torchreid
 from deep_sort_realtime.deepsort_tracker import DeepSort
-from deep_sort_realtime.deep_sort import nn_matching
+
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 import camera
 import model_tools as mt
@@ -136,7 +135,7 @@ def process_predict(frame, predict, tracker):
 
         # 如果贴近底边，5pixel以内，则不匹配
         if detection_objects[detection_idx].region.y2 > config["cam_record"]["HEIGHT"] - 10 :
-            logging.info(f"{confirmed_tracks[track_idx].track_id} on bottom")
+            #logging.info(f"{confirmed_tracks[track_idx].track_id} on bottom")
             continue
 
         # 创建融合了跟踪和姿态信息的对象
@@ -190,17 +189,19 @@ def main():
 
         # 初始化可视化窗口
         vis = su.PointcloudVisualizer(camera_params)
+        # 初始化多人3D跟踪器
+        multi_tracker_3d = su.MultiHumanTracker3D(vis)
 
         # todo: 多个，加入主逻辑 
         # 初始化3d点云对象
-        single_o3d_obj = su.SingleKypto3d(vis)
-
+        #single_o3d_obj = su.SingleKypto3d(vis)
+ 
         # 初始化地标线集
         landmark_lineset = o3d.geometry.LineSet()
         landmark_lineset.points = o3d.utility.Vector3dVector(landmark3ds)
         landmark_lineset.lines = o3d.utility.Vector2iVector(landmark_conn)
         landmark_lineset.colors = o3d.utility.Vector3dVector([green for _ in landmark_conn])
-        vis.add_geometry(landmark_lineset)
+        landmark_name = vis.add_geometry(landmark_lineset, "landmark")
 
 
         # 6. 初始化跟踪器
@@ -213,6 +214,8 @@ def main():
         skip = 0
         try:
             while True:
+                frame_count = multi_cam._frame_count
+                logging.info(f"frame_count: {frame_count}")
                 t0 = time.time()
                 # 读取视频帧
                 frames = multi_cam.read_frames()
@@ -225,11 +228,9 @@ def main():
 
                 # YOLO检测
                 predicts = DETECTOR(frames, half=False, conf=0.5, iou=0.7, verbose=False)
-                drawed_frames = []
                 trackobjs_container = []
                 for i, predict in enumerate(predicts):
                     if len(predict) == 0: # yolo 未检测到任何人
-                        drawed_frames.append(frames[i])
                         continue
 
                     trackobjs = process_predict(frames[i], predict, TrackERS_2D[i])
@@ -262,88 +263,42 @@ def main():
                     # 更新3d 地面跟踪点        
                     p3d_z0_dets = [track_obj.p3d_z0_det for track_obj in trackobjs for trackobjs in trackobjs_container]
                     p3d_z0_dets = np.array(p3d_z0_dets).astype(np.float32)
-                    single_o3d_obj.update_ground_track(p3d_z0_dets)
-
 
                     matches = mt.improved_cross_camera_reid(trackobjs_container)
-                    logging.info(f"matches: {matches}")
+                    #logging.info(f"matches: {matches}")
 
-                    # 目前只处理了两个视角的匹配
-                    for match in matches:
-                        row_idx1, col_idx1, row_idx2, col_idx2, score = match
-                        track_obj1 = trackobjs_container[row_idx1][col_idx1] #TrackHPObj()
-                        track_obj2 = trackobjs_container[row_idx2][col_idx2] #TrackHPObj()
-                        
-                        hpo3d_i = su.HumanPoseObject_3d([track_obj1.obj, track_obj2.obj])
-                        hpo3d_i.valid_matched_kypts()
-                        kypt_pair = hpo3d_i.matched_kypts
-
-                        p3ds = cam_manager.triangulate_points(kypt_pair[0], kypt_pair[1], CAM_IDS[row_idx1], CAM_IDS[row_idx2])
-                        p3ds_coco17 = su.p3d_2_kypt_17format(hpo3d_i.common_indices, p3ds)
-                        single_o3d_obj.update_data(p3ds_coco17)
-                        
-                        
-
+                    # 更新多人3D跟踪器
+                    multi_tracker_3d.update(matches, trackobjs_container, cam_manager, CAM_IDS)
                     
-                    
-                    
-                    # no matched trackobj
-                    hpo3d = su.HumanPoseObject_3d([trackobj[0].obj for trackobj in trackobjs_container])
- 
-                    # todo: with matched trackobj
-                    hpo3d.valid_matched_kypts()
-                    kypt_pair = hpo3d.matched_kypts
+                    # 检查是否有人侵入围栏
+                    step_in = multi_tracker_3d.check_fence_intrusion(landmark2d_xy)
 
-                    p3ds = cam_manager.triangulate_points(kypt_pair[0], kypt_pair[1], CAM_IDS[0], CAM_IDS[1])
-                    p3ds_coco17 = su.p3d_2_kypt_17format(hpo3d.common_indices, p3ds)
-                    single_o3d_obj.update_data(p3ds_coco17)
-
-
-            
-                    # 计算iou  ->  fence color
-                    max_bound = np.asarray(single_o3d_obj.bbox.max_bound) # (x_max, y_max, z_max)
-                    min_bound = np.asarray(single_o3d_obj.bbox.min_bound) # (x_min, y_min, z_min)
-                    x_max, y_max, z_max = max_bound
-                    x_min, y_min, z_min = min_bound
-                    box_2d = [x_min, y_min, x_max, y_max]
-                    iou = su.roi2d(box_2d,landmark2d_xy)
-                    if iou > 0:
+                    # 更新围栏颜色
+                    if step_in:
                         landmark_lineset.paint_uniform_color(red)
-                        step_in = True
                     else:
                         landmark_lineset.paint_uniform_color(green)
-                        step_in = False
-
-                    # draw 2d cube
-                    for view_index in [0,1]:
-                        vertices_2d = su.project_8_vertices_to_imgpoint(x_min, x_max, y_min, y_max, z_min, z_max,
-                                                        Ks[view_index],
-                                                        Rs[view_index],
-                                                        ts[view_index]
-                                                        )
-                        for edge in su.edges:
-                            pt1 = tuple(vertices_2d[edge[0]])
-                            pt2 = tuple(vertices_2d[edge[1]])
-                            cv2.line(frames[view_index], pt1, pt2, (128, 0, 128), 1, cv2.LINE_AA)
+                    
+                    vis.update(landmark_name)
+                    # 为每个跟踪对象绘制2D投影
 
                 else:
-
-
-                    single_o3d_obj.update_empty_points()
-                    landmark_lineset.colors = o3d.utility.Vector3dVector([green for _ in landmark_conn])
                     step_in = False
+                    landmark_lineset.paint_uniform_color(green)
+                    vis.update(landmark_name)
+                
+                # 更新所有跟踪对象
+                multi_tracker_3d.update_all()
 
                 # 判断是否进入围栏  
-                if step_in:
-                    fence_color = (0,0,255)
-                else:
-                    fence_color = (0,255,0)
-                for i in range(len(drawed_frames)):
-                    su.draw_fence(drawed_frames[i], landmarks[i], color=fence_color)  # bgr
+                fence_color = (0,0,255) if step_in else (0,255,0)
+                for i in range(len(frames)):
+                    su.draw_fence(frames[i], landmarks[i], color=fence_color)  # bgr
 
+                # 更新可视化
                 vis.update(landmark_lineset)
-                single_o3d_obj.update(vis)
 
+                # 显示视频帧
                 stack = np.vstack(frames)
                 stack = cv2.resize(stack, (960, 480*len(CAM_IDS)))
                 fps = 1 / (time.time() - t0)

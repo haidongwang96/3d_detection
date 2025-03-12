@@ -1,4 +1,4 @@
-from numpy import dtype
+
 
 import utility as su
 
@@ -51,6 +51,36 @@ font_scale = 1.5
 
 object_points = np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0], [1,1,0]], dtype=np.float32)
 z_axis = np.array((0,0,1), dtype=np.float32)
+x_min = 0
+x_max = 1
+y_min = 0
+y_max = 1
+z_min = 0
+z_max = 1
+
+edges = [
+    (0, 1), (1, 2), (2, 3), (3, 0),  # 底面
+    (4, 5), (5, 6), (6, 7), (7, 4),  # 顶面
+    (0, 4), (1, 5), (2, 6), (3, 7)   # 侧面
+]
+
+def project_8_vertices_to_imgpoint(x_min, x_max, y_min, y_max, z_min, z_max, k, rvec,tvec):
+    vertices_3d = np.array([
+        [x_min, y_min, z_min],
+        [x_max, y_min, z_min],
+        [x_max, y_max, z_min],
+        [x_min, y_max, z_min],
+        [x_min, y_min, z_max],
+        [x_max, y_min, z_max],
+        [x_max, y_max, z_max],
+        [x_min, y_max, z_max]
+    ]).astype(float)
+
+    p2d, _ = cv2.projectPoints(vertices_3d, rvec, tvec, k, None)
+    p2d = p2d.astype(int).reshape((len(p2d), 2))
+
+    return p2d
+
 
 
 def solve_XY(u, v, k, R, t):
@@ -117,6 +147,14 @@ for i,(img, mark) in enumerate(zip(imgs, marks)) :
 
     x,y = solve_XY(p2_test[0],p2_test[1], ks[i], R, t)
     print(x,y,0)
+
+    vertices_2d =  project_8_vertices_to_imgpoint(x_min, x_max, y_min, y_max, z_min, z_max, ks[i], rvec, tvec)
+
+    for edge in edges:
+        pt1 = tuple(vertices_2d[edge[0]])
+        pt2 = tuple(vertices_2d[edge[1]])
+        cv2.line(img, pt1, pt2, (0, 255, 0), 2)
+
 
 
 stack = np.hstack((img0, img1))
