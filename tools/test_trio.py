@@ -156,7 +156,7 @@ def main():
 
     # 4. 初始化多相机捕获器
     with camera.MultiCameraCapture(config) as multi_cam:
-        #multi_cam.video_feeds("1741249348001", video_folder="../data/record/tri_test/video_2")
+        multi_cam.video_feeds("1741249348001", video_folder="../data/record/tri_test/video_2")
 
         # single person
         #multi_cam.video_feeds("1741249303346", video_folder="../data/record/tri_test/video_3")
@@ -165,7 +165,7 @@ def main():
 
 
         # multi person
-        multi_cam.video_feeds("1741249374930", video_folder="../data/record/tri_test/video_3")
+        # multi_cam.video_feeds("1741249374930", video_folder="../data/record/tri_test/video_3")
         # multi_cam.video_feeds("1741249398397", video_folder="video_4")
         # multi_cam.video_feeds("1741249434256", video_folder="../data/record/tri_test/video_5")
 
@@ -350,7 +350,7 @@ def main():
                 cv2.putText(stack, f"FPS: {fps:.2f}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
                 cv2.imshow(f"Camera", stack)
                 # 按下 'q' 键退出
-                if cv2.waitKey(1) & 0xFF == ord('q'):
+                if cv2.waitKey(0) & 0xFF == ord('q'):
                     break
         finally:
             vis.destroy()

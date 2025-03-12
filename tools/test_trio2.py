@@ -305,7 +305,7 @@ def main():
                 cv2.putText(stack, f"FPS: {fps:.2f}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
                 cv2.imshow(f"Camera", stack)
                 # 按下 'q' 键退出
-                if cv2.waitKey(0) & 0xFF == ord('q'):
+                if cv2.waitKey(1) & 0xFF == ord('q'):
                     break
         finally:
             vis.destroy()
