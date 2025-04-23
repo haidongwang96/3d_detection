@@ -1,4 +1,6 @@
 
+import sys
+sys.path.append("G:/code/3d_detection")  # 添加父目录到搜索路径
 
 import utility as su
 

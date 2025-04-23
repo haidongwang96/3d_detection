@@ -5,6 +5,37 @@ import numpy as np
 fontScale = 0.5
 thickness = 1
 
+
+edges = [
+    (0, 1), (1, 2), (2, 3), (3, 0),  # 底面
+    (4, 5), (5, 6), (6, 7), (7, 4),  # 顶面
+    (0, 4), (1, 5), (2, 6), (3, 7)   # 侧面
+]
+
+def project_8_vertices_to_imgpoint(x_min, x_max, y_min, y_max, z_min, z_max, k, rvec,tvec):
+    vertices_3d = np.array([
+        [x_min, y_min, z_min],
+        [x_max, y_min, z_min],
+        [x_max, y_max, z_min],
+        [x_min, y_max, z_min],
+        [x_min, y_min, z_max],
+        [x_max, y_min, z_max],
+        [x_max, y_max, z_max],
+        [x_min, y_max, z_max]
+    ]).astype(float)
+
+    p2d, _ = cv2.projectPoints(vertices_3d, rvec, tvec, k, None)
+    p2d = p2d.astype(int).reshape((len(p2d), 2))
+
+    return p2d
+
+
+def project_keypoints_to_imgpoint(keypoints, k, rvec, tvec):
+    p2d, _ = cv2.projectPoints(keypoints, rvec, tvec, k, None)
+    p2d = p2d.astype(int).reshape((len(p2d), 2))
+    return p2d
+
+
 def get_axis_points(length=0.05):
     coordinate_points = np.float32([[0, 0, 0],  # 原点
                                     [length, 0, 0],  # X轴终点
@@ -21,17 +52,41 @@ def draw_axes(frame, imgpts):
     return frame
 
 
-def drawCube(img, imgpts):
+
+
+def drawCube(img, imgpts, color=(0, 255, 0), thickness=1):
+    """ Draws a 3D cube projected onto a 2D image plane.
+
+    Args:
+        img: The image to draw on.
+        imgpts: An array of 8 projected 2D points corresponding to the cube vertices.
+                Expected order: (bottom face counter-clockwise, then top face counter-clockwise)
+                0: x_min, y_min, z_min -> projected
+                1: x_max, y_min, z_min -> projected
+                2: x_max, y_max, z_min -> projected
+                3: x_min, y_max, z_min -> projected
+                4: x_min, y_min, z_max -> projected
+                5: x_max, y_min, z_max -> projected
+                6: x_max, y_max, z_max -> projected
+                7: x_min, y_max, z_max -> projected
+        color: The color of the cube lines (B, G, R).
+        thickness: The thickness of the cube lines.
+    """
     imgpts = np.int32(imgpts).reshape(-1, 2)
 
-    # Add green plane
-    img = cv2.drawContours(img, [imgpts[:4]], -1, (0, 255, 0), -3)
+    # Define the 12 edges of the cube based on vertex indices
+    edges = [
+        (0, 1), (1, 2), (2, 3), (3, 0),  # Bottom face
+        (4, 5), (5, 6), (6, 7), (7, 4),  # Top face
+        (0, 4), (1, 5), (2, 6), (3, 7)   # Vertical edges
+    ]
 
-    # Add box borders
-    for i in range(4):
-        j = i + 4
-        img = cv2.line(img, tuple(imgpts[i]), tuple(imgpts[j]), (255), 3)
-        img = cv2.drawContours(img, [imgpts[4:]], -1, (0, 0, 255), 3)
+    # Draw each edge
+    for pt1_idx, pt2_idx in edges:
+        pt1 = tuple(imgpts[pt1_idx])
+        pt2 = tuple(imgpts[pt2_idx])
+        img = cv2.line(img, pt1, pt2, color, thickness)
+
     return img
 
 def draw_o3d_cube(img, pts, color):
@@ -43,7 +98,7 @@ def draw_o3d_cube(img, pts, color):
 
 
 
-def draw_predict(region: su.LabeledBoundingBox(), image, color=(0, 255, 0), bbox=True, polyline=False):
+def draw_predict(region, image, color=(0, 255, 0), bbox=True, polyline=False):
 
 
     if polyline and region.polygon is not None:
@@ -85,7 +140,7 @@ def generate_distinct_colors(count):
 def draw_track_bbox(frame, bbox, id, color, thickness=1):
 
     x1, y1, x2, y2 = bbox
-    cv2.putText(frame, f"Person: {id}", (int(x1), int(y1 - 10)),
+    cv2.putText(frame, f"TrackID: {id}", (int(x1), int(y1 - 10)),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, thickness)
 
     cv2.rectangle(frame, (int(x1), int(y1)), (int(x2), int(y2)), color, thickness)

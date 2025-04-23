@@ -17,7 +17,7 @@ import utility as su
 import logging
 # 配置日志记录器
 logging.basicConfig(level=logging.INFO, 
-                    format='%(asctime)s - %(levelname)s - %(filename)s - %(message)s',
+                    format='%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s',
                     handlers=[
                         logging.FileHandler("app.log"),  # 将日志写入文件
                         logging.StreamHandler()  # 同时输出到控制台
@@ -55,16 +55,6 @@ for id in cam_manager.cam_ids:
 
 
 DETECTOR = ultralytics.YOLO("../data/weights/yolo11n-pose.pt")
-# EXTRACTOR = torchreid.utils.FeatureExtractor(
-#     model_name='mobilenetv2_x1_0',
-#     model_path="../data/weights/mobilenetv2_1dot0_market .pth.tar",
-#     device='cuda'
-# )
-# EXTRACTOR = torchreid.utils.FeatureExtractor(
-#     model_name='osnet_x1_0',
-#     model_path="../data/weights/osnet_x1_0_imagenet.pth",
-#     device='cuda'
-# )
 
 
 def process_predict(frame, predict, tracker):
@@ -177,12 +167,20 @@ def main():
 
         # 5. 初始化 Open3D 可视化
         # o3d 控制相机视角
-        o3d_angle_index = 1
+        o3d_angle_index = 0
         intr_mat = cam_manager.intrinsics[CAM_IDS[o3d_angle_index]]
         extr_mat = cam_manager.extrinsics[CAM_IDS[o3d_angle_index]]['pose_mat']
 
         # o3d 相机拍摄传入参数
-        intrinsic = o3d.camera.PinholeCameraIntrinsic(500, 300, intr_mat)
+        # o3d 相机拍摄传入参数 - 修改这部分
+        intrinsic = o3d.camera.PinholeCameraIntrinsic(
+            width=1280,  # 与窗口宽度匹配
+            height=720,  # 与窗口高度匹配
+            fx=intr_mat[0, 0],
+            fy=intr_mat[1, 1],
+            cx=intr_mat[0, 2],
+            cy=intr_mat[1, 2]
+        )
         camera_params = o3d.camera.PinholeCameraParameters()
         camera_params.intrinsic = intrinsic
         camera_params.extrinsic = extr_mat
@@ -192,9 +190,6 @@ def main():
         # 初始化多人3D跟踪器
         multi_tracker_3d = su.MultiHumanTracker3D(vis)
 
-        # todo: 多个，加入主逻辑 
-        # 初始化3d点云对象
-        #single_o3d_obj = su.SingleKypto3d(vis)
  
         # 初始化地标线集
         landmark_lineset = o3d.geometry.LineSet()
@@ -202,6 +197,9 @@ def main():
         landmark_lineset.lines = o3d.utility.Vector2iVector(landmark_conn)
         landmark_lineset.colors = o3d.utility.Vector3dVector([green for _ in landmark_conn])
         landmark_name = vis.add_geometry(landmark_lineset, "landmark")
+
+        # 强制更新一次渲染器，确保初始场景可见
+        vis.update()
 
 
         # 6. 初始化跟踪器
@@ -269,9 +267,11 @@ def main():
 
                     # 更新多人3D跟踪器
                     multi_tracker_3d.update(matches, trackobjs_container, cam_manager, CAM_IDS)
+                    logging.info(f"{multi_tracker_3d.tracks.keys()}")
                     
                     # 检查是否有人侵入围栏
                     step_in = multi_tracker_3d.check_fence_intrusion(landmark2d_xy)
+                    logging.info(f"step_in: {step_in}")
 
                     # 更新围栏颜色
                     if step_in:
@@ -279,14 +279,20 @@ def main():
                     else:
                         landmark_lineset.paint_uniform_color(green)
                     
-                    vis.update(landmark_name)
                     # 为每个跟踪对象绘制2D投影
 
                 else:
+                    # 当没有足够的视角检测到人时，将所有跟踪对象设置为空点
+                    for track_id, track in multi_tracker_3d.tracks.items():
+                        track.update_empty_points()
+
+                    # 当没有足够的视角检测到人时，将所有跟踪对象设置为空点
+                    #multi_tracker_3d.set_all_empty()
+
                     step_in = False
                     landmark_lineset.paint_uniform_color(green)
-                    vis.update(landmark_name)
                 
+                vis.update(landmark_name)
                 # 更新所有跟踪对象
                 multi_tracker_3d.update_all()
 
@@ -305,7 +311,7 @@ def main():
                 cv2.putText(stack, f"FPS: {fps:.2f}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
                 cv2.imshow(f"Camera", stack)
                 # 按下 'q' 键退出
-                if cv2.waitKey(1) & 0xFF == ord('q'):
+                if cv2.waitKey(0) & 0xFF == ord('q'):
                     break
         finally:
             vis.destroy()

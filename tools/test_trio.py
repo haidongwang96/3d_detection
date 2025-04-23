@@ -191,7 +191,6 @@ def main():
         # 初始化可视化窗口
         vis = su.PointcloudVisualizer(camera_params)
 
-        # todo: 多个，加入主逻辑 
         # 初始化3d点云对象
         single_o3d_obj = su.SingleKypto3d(vis)
 

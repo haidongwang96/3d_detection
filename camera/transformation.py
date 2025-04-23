@@ -29,7 +29,6 @@ class Extrinsic:
         new_points_3d = (self.R() @ points_3d.T).T + self.t().T  # 变换
         return new_points_3d
 
-
     def R(self):
         # 旋转矩阵
         return self.pose_mat[:3, :3]
@@ -296,6 +295,33 @@ def rotate_to_z0_rotation_matrix(points):
     # 构造旋转矩阵
     rotation_matrix = np.vstack([u, v, normal_normalized])
     return rotation_matrix, centroid
+
+
+
+def compute_ray_distance(K1, R1, t1, K2, R2, t2, point1, point2):
+    # 将像素坐标转换为归一化坐标
+    p1 = np.linalg.inv(K1) @ np.array([point1[0], point1[1], 1])
+    p2 = np.linalg.inv(K2) @ np.array([point2[0], point2[1], 1])
+    
+    # 计算射线方向向量（在世界坐标系中）
+    d1 = R1 @ p1
+    d2 = R2 @ p2
+    
+    # 相机中心（在世界坐标系中）
+    c1 = -R1.T @ t1
+    c2 = -R2.T @ t2
+    
+    # 计算最短距离
+    n = np.cross(d1, d2)  # 法向量
+    n_norm = np.linalg.norm(n)
+    
+    if n_norm < 1e-10:  # 射线平行或重合
+        return np.linalg.norm(np.cross(c2 - c1, d1)) / np.linalg.norm(d1)
+    
+    # 计算最短距离
+    distance = abs(np.dot(n, (c2 - c1))) / n_norm
+    
+    return distance
 
 
 

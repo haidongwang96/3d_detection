@@ -11,3 +11,5 @@
 *.npy
 *.idea
 *.xml
+*pycache
+*.pyc
