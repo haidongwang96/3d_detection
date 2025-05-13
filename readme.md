@@ -1,16 +1,13 @@
-# 3d_detection
+# 3d-human-pose-estimation and intrusion detection
 
-项目总架构
-![total_flowchart.png](total_flowchart.png)
+Detection：yolov11-pose
+2d tracker: deepsort(with mobilenet reid model)
 
-2d detector: yolov11
-2d tracker : deepsort
-reid: torchreid
-
-preprocessing_tools.py: 见相机录制手册
-MultiCameraCapture： 管理多个相机(内参/外参)
-HumanPoseObject: 管理2d det结果
-HumanPoseObject_3d: 管理3d 结果
-
-
-todo: different track different color
+calibration instruction:
+intr：
+          record multiple chessboard for each camera
+          'tools\preprocessing_tools.py' for intr calibration
+extr：
+          record duo camera in the same time
+          mark 4dot, in clockwise for 3d space [0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0]
+          'tools\preprocessing_tools.py' for extr calibration(pnp)
