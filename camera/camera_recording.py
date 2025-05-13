@@ -3,8 +3,6 @@ import cv2
 import time
 import os
 
-from taichi.examples.rendering.rasterizer import width
-
 import utility as su
 
 
@@ -75,6 +73,8 @@ def double_picture_recording(cam_id1, cam_id2, key="sample"):
         print("Error: Could not open one or both cameras.")
         exit()
 
+    window_name = f"{cam_id1} + {cam_id2}"
+
     while True:
         t0 = time.time()
         # Capture frames from both cameras
@@ -87,7 +87,7 @@ def double_picture_recording(cam_id1, cam_id2, key="sample"):
             break
 
         images = np.hstack((frame0, frame1))
-        cv2.imshow("0", images)
+        cv2.imshow(window_name, images)
         key = cv2.waitKey(1)
 
         if key == 32:
@@ -105,7 +105,7 @@ def double_picture_recording(cam_id1, cam_id2, key="sample"):
         if key == 27:  # exit on ESC
             break
 
-    cv2.destroyWindow("0")
+    cv2.destroyWindow(window_name)
 
 
 def double_mp4_recording(cam_id1, cam_id2, key="video", config =None):

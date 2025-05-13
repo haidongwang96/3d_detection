@@ -13,3 +13,5 @@
 *.xml
 *pycache
 *.pyc
+.cursor
+.idea

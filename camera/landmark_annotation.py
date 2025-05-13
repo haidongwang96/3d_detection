@@ -29,6 +29,7 @@ def on_EVENT_LBUTTONDOWN(event, x, y, args, param):
 
 def single_landmark_annotation(proj_folder, image_folder_path, cam_id):
 
+
     images_names = su.collect_images_by_index(image_folder_path, cam_id)
     assert len(images_names) == 1, ("外参为唯一图像")
     landmark_image_path = images_names[0]

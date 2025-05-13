@@ -23,7 +23,8 @@ def print_block():
     print("===========================================================")
 
 def collect_images_by_index(image_folder_path, cam_id):
-    images_prefix =f"{image_folder_path}/*_{cam_id}.jpg"
+    images_prefix =f"{image_folder_path}\\*_{cam_id}.jpg"
+
     images_paths = glob.glob(images_prefix)
     return images_paths
 
@@ -32,11 +33,11 @@ def collect_file_by_index_prefix(dir, cam_id,prefix="txt"):
     file_paths = glob.glob(files)
     return file_paths
 
-def create_ouput_folder(prefix="sample"):
+def create_ouput_folder(home_dir="3d_detection", prefix="sample"):
     """
     check and create asending order new directory with prefix
     """
-    record_path = os.path.join(os.path.curdir, "data", "record")
+    record_path = os.path.join(home_dir, "data", "record")
     os.makedirs(record_path,exist_ok=True)
     n = 0
     while True:
