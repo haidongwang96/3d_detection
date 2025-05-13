@@ -3,8 +3,10 @@ import sys
 import os
 sys.path.append("G:/code/3d_detection")  # 添加父目录到搜索路径
 
+import argparse
 import cv2
 import time
+import datetime
 import numpy as np
 import ultralytics
 from deep_sort_realtime.deepsort_tracker import DeepSort
@@ -17,93 +19,40 @@ import utility as su
 
 import logging
 # 配置日志记录器
-logging.basicConfig(level=logging.INFO, 
-                    format='%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s',
-                    handlers=[
-                        logging.FileHandler("app.log"),  # 将日志写入文件
-                        logging.StreamHandler()  # 同时输出到控制台
-                    ])
 
 
-# 地标， 默认z轴=0， 单位长度为1
-landmark3ds = np.array([[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0]], dtype=np.float32)
-landmark2d_xy = np.array([0 ,0, 1, 1]) # xymin, xymax
-boundary = [(-1, 2),(-1, 2),(0, 2)]
-landmark_conn = [[0,1],[1,2],[2,3],[3,0]]
-green = [0,1,0]  # RGB
-red = [1,0,0]
-orange = [1, 0.647, 0]  
-purple = [0.5, 0, 0.5]
-track_colors = su.generate_distinct_colors(100)
-
-
-max_age= 5
-
-# 1. 初始化配置
-config = su.read_yaml_file('../data/record/tri_test/config.yaml')
-CAM_IDS = config["cam_ids"]
-
-# 2. 初始化相机管理器（处理相机参数）
-cam_manager = camera.CameraManager('../data/record/tri_test/config.yaml')
-
-# 3. 获取相机参数
-Ks, Rs, ts, Ps = [], [], [], []
-for id in cam_manager.cam_ids:
-    K, R, t = cam_manager.get_camera_params(id)
-    Ks.append(K)
-    Rs.append(R)
-    ts.append(t)
-    P = cam_manager.get_projection_matrix(id)
-    Ps.append(P)
-
-
-DETECTOR = ultralytics.YOLO("../data/weights/yolo11n-pose.pt")
-
-
-
-def main():
+def run(config):
 
     # 4. 初始化多相机捕获器
     with camera.MultiCameraCapture(config) as multi_cam:
-        #multi_cam.video_feeds("1741249348001", video_folder="../data/record/tri_test/video_2")
+        multi_cam.camera_feeds(CAM_IDS)
 
-        # single person
-        #multi_cam.video_feeds("1741249303346", video_folder="../data/record/tri_test/video_0")
-        # multi_cam.video_feeds("1741249326571", video_folder="../data/record/tri_test/video_1")
-        multi_cam.video_feeds("1741249348001", video_folder="../data/record/tri_test/video_2")
-
-
-        # multi person
-        # multi_cam.video_feeds("1741249374930", video_folder="../data/record/tri_test/video_3")
-        # multi_cam.video_feeds("1741249398397", video_folder="../data/record/tri_test/video_4")
-        # multi_cam.video_feeds("1741249434256", video_folder="../data/record/tri_test/video_5")
-
-        video_writer = None  # Initialize VideoWriter
-        output_filename = '../data/record/tri_test/video_2/output.mp4'
-        output_fps = 15.0 # Set desired FPS
-
-        
-
-        # todo: here !
-        # landmarks = camera.VirtualFences(config).landmarks
-        landmark_3 = [[591, 501],[457, 558],[603, 644],[729, 564]]
-        landmark_5 = [[400, 433],[427, 546],[606, 544],[556, 445]]
-        landmark_7 = [[659, 622],[790, 483],[622, 426],[475, 529]]
-        landmarks = [landmark_3, landmark_5, landmark_7]
+        landmarks = []
+        landmarks_dir = os.path.join(root, config['proj_root'], config['landmark'])
+        #f"..data/record//{config['proj_root']}/{config['landmark']}"
+        for cam_id in CAM_IDS:
+            landmark_path = su.collect_file_by_index_prefix(landmarks_dir, cam_id, "txt")
+            assert len(landmark_path) == 1, f"landmark_path: {landmark_path}"
+            landmark_path = landmark_path[0]
+            landmark_i = su.read_list_file(landmark_path," ")
+            landmark_i = np.array(landmark_i, dtype=np.int32)
+            landmarks.append(landmark_i)
 
 
         # 6. 初始化跟踪器
-        TrackERS_2D = [DeepSort(n_init=3,
-                                max_age=15,
-                                max_iou_distance=0.7,
-                                nms_max_overlap=1.0,
-                                embedder="mobilenet",) for _ in CAM_IDS]
+        TrackERS_2D = [DeepSort(n_init=tracker_2d_config['n_init'],
+                                max_age=tracker_2d_config['max_age'],
+                                max_iou_distance=tracker_2d_config['max_iou_distance'],
+                                nms_max_overlap=tracker_2d_config['nms_max_overlap'],
+                                embedder=tracker_2d_config['embedder'],) for _ in CAM_IDS]
 
-        multi_tracker_3d = su.MultiHumanTracker3D_NoO3D(max_age=max_age)
+        multi_tracker_3d = su.MultiHumanTracker3D_NoO3D(max_age=tracker_3d_config['max_age'])
 
 
         # 7. 主循环
         skip = 0
+        current_datetime = "None"
+        start = time.time()
         try:
             while True:
                 step_in = False
@@ -125,7 +74,7 @@ def main():
                     continue
 
                 # YOLO检测
-                predicts = DETECTOR(frames, half=False, conf=0.5, iou=0.7, verbose=False)
+                predicts = DETECTOR(frames, half=yolo_config['half'], conf=yolo_config['conf'], iou=yolo_config['iou'], verbose=False)
                 trackobjs_container = []
                 for i, predict in enumerate(predicts):
                     if len(predict) == 0: # yolo 未检测到任何人
@@ -195,8 +144,7 @@ def main():
                         last_measured_frame = track_data.get('last_measured_frame')
                         age = multi_tracker_3d.frame_count - last_measured_frame
                         logging.info(f"bbox_3d: {bbox_3d}")
-                        #logging.info(f"keypoints: {keypoints}")
-                        #if bbox_3d:
+
                         # Project 3D bbox vertices to 2D image plane
                         p2d = su.project_8_vertices_to_imgpoint(
                             bbox_3d[0], bbox_3d[3], bbox_3d[1], bbox_3d[4], bbox_3d[2], bbox_3d[5],
@@ -234,7 +182,6 @@ def main():
                 stack = cv2.resize(stack, (target_width, target_height))
                 stack_white = cv2.resize(stack_white, (target_width, target_height))
 
-
                 stack_all = np.hstack([stack, stack_white])
                 if step_in:
                     # 获取 stack_all 的尺寸
@@ -244,32 +191,76 @@ def main():
                     border_thickness = 10  # 可以根据需要调整边框厚度
                     # 在 stack_all 图像上绘制红色边框
                     cv2.rectangle(stack_all, (0, 0), (w - 1, h - 1), border_color, border_thickness)
-
-                # Initialize VideoWriter on the first valid frame
-                if video_writer is None:
-                    height, width, _ = stack_all.shape
-                    fourcc = cv2.VideoWriter_fourcc(*'mp4v') # Codec for MP4
-                    video_writer = cv2.VideoWriter(output_filename, fourcc, output_fps, (width, height))
-                    logging.info(f"Initialized video writer with size: ({width}, {height}) and FPS: {output_fps}")
-
-                # Write frame to video file
-                if video_writer is not None:
-                    video_writer.write(stack_all)
+                    current_datetime = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                
+                
 
                 fps = 1 / (time.time() - t0) if (time.time() - t0) > 0 else 0
-                cv2.putText(stack_all, f"FPS: {fps:.2f}", (100, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+                current_time = time.time() - start
+                minutes = int(current_time // 60)
+                seconds = int(current_time % 60)
+                current_time = f"{minutes:02d}:{seconds:02d}"
+                cv2.putText(stack_all, f"FPS: {fps:.2f}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+                cv2.putText(stack_all, f"Time: {current_time}", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+                cv2.putText(stack_all, f"Last Intrusion: {current_datetime}", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
                 cv2.imshow(f"Camera View", stack_all)
 
                 # 按下 'q' 键退出, waitKey(1) for video, waitKey(0) for stepping
                 if cv2.waitKey(1) & 0xFF == ord('q'):
                     break
         finally: 
-            if video_writer is not None:
-                video_writer.release() # Release the video writer
-                logging.info(f"Video saved to {output_filename}")
             cv2.destroyAllWindows()
             
 
 
 if __name__ == '__main__':
-   main()
+    logging.basicConfig(level=logging.INFO, 
+                        format='%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s',
+                        handlers=[
+                            logging.FileHandler("app.log"),  # 将日志写入文件
+                            logging.StreamHandler()  # 同时输出到控制台
+                        ])
+
+
+    # 地标， 默认z轴=0， 单位长度为1
+    landmark3ds = np.array([[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0]], dtype=np.float32)
+    landmark2d_xy = np.array([0 ,0, 1, 1]) # xymin, xymax
+    boundary = [(-1, 2),(-1, 2),(0, 2)]
+    landmark_conn = [[0,1],[1,2],[2,3],[3,0]]
+    green = [0,1,0]  # RGB
+    red = [1,0,0]
+    orange = [1, 0.647, 0]  
+    purple = [0.5, 0, 0.5]
+    track_colors = su.generate_distinct_colors(100)
+
+    args = argparse.ArgumentParser()
+    args.add_argument("--config", type=str, default="G:/code/3d_detection/data/record/video_test_0/config.yaml")
+    args = args.parse_args()
+
+
+    # 1. 初始化配置
+    config = su.read_yaml_file(args.config)
+    root=config['root']
+    CAM_IDS = config["cam_ids"]
+    yolo_config = config["yolo"]
+    tracker_2d_config = config["tracker_2d"]
+    tracker_3d_config = config["tracker_3d"]
+
+
+    # 2. 初始化相机管理器（处理相机参数）
+    cam_manager = camera.CameraManager(config)
+
+    # 3. 获取相机参数
+    Ks, Rs, ts, Ps = [], [], [], []
+    for id in cam_manager.cam_ids:
+        K, R, t = cam_manager.get_camera_params(id)
+        Ks.append(K)
+        Rs.append(R)
+        ts.append(t)
+        P = cam_manager.get_projection_matrix(id)
+        Ps.append(P)
+
+    DETECTOR = ultralytics.YOLO(os.path.join(root, yolo_config['model']))
+
+
+    run(config)

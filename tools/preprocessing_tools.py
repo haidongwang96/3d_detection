@@ -1,4 +1,6 @@
 import os
+import sys
+sys.path.append("G:/code/3d_detection")  # 添加父目录到搜索路径
 import camera
 
 """
@@ -40,19 +42,21 @@ def multi_camera_landmark_annotation(landmark_dir, cam_ids=[0, 1]):
     """
 
     for cam_id in cam_ids:
+        print(cam_id)
         camera.single_landmark_annotation(landmark_dir, cam_id)
 
 if __name__ == '__main__':
 
 
-    cam_ids = [2, 4]
-    record_root_folder = "../data/record/office_3rd_floor_whd"
+    cam_ids = [0, 1]
+    record_root_folder = "video_test_0"
+    print(os.listdir(record_root_folder))
     intrinsic_folder = os.path.join(record_root_folder, "calib_info")
 
     # 棋盘格
     # 内参标定
-    chessboard_folder = os.path.join(record_root_folder, "chessboard_0")
-    multi_camera_calibrate_intrinsics(chessboard_folder, intrinsic_folder, cam_ids=cam_ids)
+    # chessboard_folder = os.path.join(record_root_folder, "chessboard_0")
+    # multi_camera_calibrate_intrinsics(chessboard_folder, intrinsic_folder, cam_ids=cam_ids)
 
     # arUco码
     # 双相机外参同时标定
@@ -61,7 +65,11 @@ if __name__ == '__main__':
 
     # fence标定
     landmark_folder = os.path.join(record_root_folder, "landmark_0")
-    multi_camera_landmark_annotation(landmark_folder, cam_ids)
+    print(landmark_folder)
+    for cam_id in cam_ids:
+        print(cam_id)
+        camera.single_landmark_annotation(record_root_folder,landmark_folder, cam_id)
+    #multi_camera_landmark_annotation(landmark_folder, cam_ids)
 
 
 

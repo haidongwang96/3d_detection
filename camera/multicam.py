@@ -15,7 +15,7 @@ class VirtualFences:
 
     def __init__(self, config):
         self.config = config
-        self.landmark_folder = f"../data/record/{self.config['proj_root']}/landmark_0"
+        self.landmark_folder = os.path.join(config['root'], config['proj_root'], config['landmark'])
         self.landmarks = self.load_virtual_fences(self.landmark_folder, config["cam_ids"])
 
     def load_virtual_fences(self, landmark_dir, cam_ids):
@@ -72,14 +72,14 @@ class CameraManager:
     3. 提供坐标变换接口
     4. 支持多相机系统
     """
-    def __init__(self, config_path: str):
+    def __init__(self, config):
         """
         初始化相机管理器
         
         Args:
             config_path: 配置文件路径
         """
-        self.config = su.read_yaml_file(config_path)
+        self.config = config
         self.cam_ids = self.config["cam_ids"]
         self.proj_root = self.config["proj_root"]
         
@@ -91,7 +91,8 @@ class CameraManager:
         
     def _init_camera_params(self):
         """初始化所有相机的参数"""
-        calib_folder = f"../data/record/{self.proj_root}/calib_info"
+
+        calib_folder = os.path.join(self.config['root'], self.config['proj_root'], 'calib_info')
         
         self.cameras = {}
         self.intrinsics = {}
@@ -341,7 +342,7 @@ class MultiCameraCapture:
         for cap in self.captures:
             ret, frame = cap.read()
             if not ret:
-                raise ValueError("读取帧失败")
+                return None
             frames.append(frame)
         
         self._frame_count += 1
