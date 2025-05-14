@@ -1,4 +1,3 @@
-
 import sys
 import os
 sys.path.append("G:/code/3d_detection")  # 添加父目录到搜索路径
@@ -50,12 +49,20 @@ def run(config):
 
 
         # 7. 主循环
-        skip = 0
         current_datetime = "None"
         start = time.time()
+        # 添加变量用于隔帧处理
+        frame_to_process = True
+        # 存储上一帧处理结果
+        last_trackobjs_container = []
+        last_matches = []
+        last_step_in = False
+        # FPS计算相关变量
+        fps_smoothing = 0.9  # 平滑系数，值越大平滑效果越强
+        avg_fps = 0
+        prev_time = time.time()
         try:
             while True:
-                step_in = False
                 frame_count = multi_cam._frame_count
                 logging.info(f"frame_count: {frame_count}")
                 t0 = time.time()
@@ -67,69 +74,73 @@ def run(config):
                 # Draw 3D BBoxes onto 2D frames
                 white_boards = [np.zeros_like(f)+255 for f in frames]
                
-                # 录制的视频前面有跳帧，原因不明
-                # 处理跳帧
-                if skip < 1:
-                    skip += 1
-                    continue
+                # 仅在需要处理的帧上执行检测和分析
+                if frame_to_process:
+                    step_in = False
+                    # YOLO检测
+                    predicts = DETECTOR(frames, half=yolo_config['half'], conf=yolo_config['conf'], iou=yolo_config['iou'], verbose=False)
+                    trackobjs_container = []
+                    for i, predict in enumerate(predicts):
+                        if len(predict) == 0: # yolo 未检测到任何人
+                            trackobjs_container.append([]) # Add empty list if no detections
+                            continue
 
-                # YOLO检测
-                predicts = DETECTOR(frames, half=yolo_config['half'], conf=yolo_config['conf'], iou=yolo_config['iou'], verbose=False)
-                trackobjs_container = []
-                for i, predict in enumerate(predicts):
-                    if len(predict) == 0: # yolo 未检测到任何人
-                        trackobjs_container.append([]) # Add empty list if no detections
-                        continue
+                        trackobjs = mt.process_predict(frames[i], predict, TrackERS_2D[i], config)
 
-                    trackobjs = mt.process_predict(frames[i], predict, TrackERS_2D[i], config)
+                        # 基于tracking+obj
+                        for track_obj in trackobjs:
+                            # 计算det底边中点 z=0 的3d点
+                            p3d_z0 = track_obj.obj_floor_coordinate(Ks[i], Rs[i], ts[i])
+                            track_obj.p3d_z0_det = np.array(p3d_z0)
 
-                    # 基于tracking+obj
-                    for track_obj in trackobjs:
-                        # 画出detetion 结果的框
-                        frames[i] = mt.obj_plot(frames[i], track_obj.obj,
-                                                draw_bbox=True, draw_refined_bbox=False, draw_pose=True)
+                        # Ensure container has an entry for each camera, even if empty
+                        trackobjs_container.append(trackobjs)
+                    
+                    # Check if we have results for *enough* cameras (e.g., at least 2 for triangulation)
+                    valid_views_count = sum(1 for objs in trackobjs_container if objs)
+                    if valid_views_count >= 2: # Need at least two views for triangulation
+                        # Find matches across cameras that have detections
+                        matches = mt.improved_cross_camera_reid(trackobjs_container)
 
-                        # 画出tracker的框，蓝色框
-                        track = track_obj.track
-                        if track.is_confirmed():
-                            frames[i] = su.draw_track_bbox(frames[i], track.to_tlbr(), track.track_id, (255, 0, 0), thickness=2)
-                            # todo: 画追踪轨迹
+                        # 更新多人3D跟踪器
+                        multi_tracker_3d.update(matches, trackobjs_container, cam_manager, CAM_IDS)
 
-                        # 画出底边中点
-                        cv2.circle(frames[i], track_obj.get_track_box_bottom_center, 2, (0, 165, 255), thickness=2) # 橙色
-                        cv2.circle(frames[i], track_obj.get_obj_box_bottom_center, 2, (128, 0, 128), thickness=2) # 紫色
-
-                        # 计算det底边中点 z=0 的3d点
-                        p3d_z0 = track_obj.obj_floor_coordinate(Ks[i], Rs[i], ts[i])
-                        track_obj.p3d_z0_det = np.array(p3d_z0)
-
-                    # Ensure container has an entry for each camera, even if empty
-                    trackobjs_container.append(trackobjs)
-                
-
-                # Check if we have results for *enough* cameras (e.g., at least 2 for triangulation)
-                # This logic might need adjustment based on how matches are handled with missing data
-                valid_views_count = sum(1 for objs in trackobjs_container if objs)
-                if valid_views_count >= 2: # Need at least two views for triangulation
-                    # Potentially filter trackobjs_container and cam_ids/params passed to matching/update
-                    # For now, assume matching handles potential empty lists if needed
-
-                    # Find matches across cameras that have detections
-                    matches = mt.improved_cross_camera_reid(trackobjs_container)
-
-                    # 更新多人3D跟踪器
-                    # Pass only relevant data if matching needs it
-                    multi_tracker_3d.update(matches, trackobjs_container, cam_manager, CAM_IDS)
-
-                    # 检查是否有人侵入围栏
-                    step_in = multi_tracker_3d.check_fence_intrusion(landmark2d_xy)
-                    logging.info(f"step_in: {step_in}")
-
+                        # 检查是否有人侵入围栏
+                        step_in = multi_tracker_3d.check_fence_intrusion(landmark2d_xy)
+                        logging.info(f"step_in: {step_in}")
+                    else:
+                        # 无匹配时
+                        matches = []
+                        multi_tracker_3d.update([], trackobjs_container, cam_manager, CAM_IDS)
+                    
+                    # 保存当前处理结果，供下一帧使用
+                    last_trackobjs_container = trackobjs_container
+                    last_matches = matches
+                    last_step_in = step_in
                 else:
-                    # 无匹配时
-                    multi_tracker_3d.update([], trackobjs_container, cam_manager, CAM_IDS)
-                    #step_in = False
+                    # 使用上一帧的处理结果
+                    trackobjs_container = last_trackobjs_container
+                    matches = last_matches
+                    step_in = last_step_in
                 
+                # 绘制处理结果（无论是当前帧还是上一帧的结果）
+                # 对每个相机视图绘制2D检测结果
+                for i in range(len(frames)):
+                    if i < len(trackobjs_container):
+                        for track_obj in trackobjs_container[i]:
+                            # 画出detetion 结果的框
+                            frames[i] = mt.obj_plot(frames[i], track_obj.obj,
+                                                    draw_bbox=True, draw_refined_bbox=False, draw_pose=True)
+
+                            # 画出tracker的框，蓝色框
+                            track = track_obj.track
+                            if track.is_confirmed():
+                                frames[i] = su.draw_track_bbox(frames[i], track.to_tlbr(), track.track_id, (255, 0, 0), thickness=2)
+
+                            # 画出底边中点
+                            cv2.circle(frames[i], track_obj.get_track_box_bottom_center, 2, (0, 165, 255), thickness=2) # 橙色
+                            cv2.circle(frames[i], track_obj.get_obj_box_bottom_center, 2, (128, 0, 128), thickness=2) # 紫色
+
                 # 更新所有跟踪对象状态 (like bbox calculation)
                 for i in range(len(white_boards)): # Iterate through each camera view
                     k = Ks[i]
@@ -193,17 +204,24 @@ def run(config):
                     cv2.rectangle(stack_all, (0, 0), (w - 1, h - 1), border_color, border_thickness)
                     current_datetime = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 
+                # 计算平滑的FPS，考虑到隔帧处理
+                current_fps = 1 / (time.time() - t0) if (time.time() - t0) > 0 else 0
+                if avg_fps == 0:
+                    avg_fps = current_fps
+                else:
+                    avg_fps = fps_smoothing * avg_fps + (1 - fps_smoothing) * current_fps
                 
-
-                fps = 1 / (time.time() - t0) if (time.time() - t0) > 0 else 0
+                cv2.putText(stack_all, f"FPS: {avg_fps:.2f}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
                 current_time = time.time() - start
                 minutes = int(current_time // 60)
                 seconds = int(current_time % 60)
                 current_time = f"{minutes:02d}:{seconds:02d}"
-                cv2.putText(stack_all, f"FPS: {fps:.2f}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
                 cv2.putText(stack_all, f"Time: {current_time}", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
                 cv2.putText(stack_all, f"Last Intrusion: {current_datetime}", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
                 cv2.imshow(f"Camera View", stack_all)
+
+                # 切换处理标志，实现隔帧处理
+                frame_to_process = not frame_to_process
 
                 # 按下 'q' 键退出, waitKey(1) for video, waitKey(0) for stepping
                 if cv2.waitKey(1) & 0xFF == ord('q'):
